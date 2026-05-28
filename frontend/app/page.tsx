@@ -213,7 +213,7 @@ export default function Home() {
       if (!file) continue;
 
       const fileId = crypto.randomUUID();
-      const path = `${publicWorkspace}/masters/${item.key}/${fileId}-${file.name}`;
+      const path = `${publicWorkspace}/masters/${item.key}/${fileId}${getSafeFileExtension(file.name)}`;
       const { error: uploadError } = await supabase.storage
         .from("workforce-inputs")
         .upload(path, file, { upsert: true });
@@ -281,7 +281,7 @@ export default function Home() {
     }
 
     const runId = crypto.randomUUID();
-    const scanPath = `${publicWorkspace}/runs/${runId}/timestamp-${timestampFile.name}`;
+    const scanPath = `${publicWorkspace}/runs/${runId}/timestamp${getSafeFileExtension(timestampFile.name)}`;
     const { error: uploadError } = await supabase.storage
       .from("workforce-inputs")
       .upload(scanPath, timestampFile, { upsert: true });
@@ -706,6 +706,11 @@ function minutesBetween(shiftStart: string, scanIn: Date) {
   const shift = new Date(scanIn);
   shift.setHours(hour || 0, minute || 0, 0, 0);
   return Math.round((scanIn.getTime() - shift.getTime()) / 60000);
+}
+
+function getSafeFileExtension(filename: string) {
+  const match = filename.toLowerCase().match(/\.(csv|xlsx|xls)$/);
+  return match ? `.${match[1]}` : "";
 }
 
 function DashboardPanels({

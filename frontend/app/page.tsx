@@ -369,7 +369,7 @@ export default function Home() {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="cpf-logo">
-          <span>CPF</span>
+          <img alt="CPF" src="/cpf-logo.svg" />
         </div>
 
         <nav className="nav-list" aria-label="Main navigation">

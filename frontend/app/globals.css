@@ -915,6 +915,23 @@ button {
   font-size: 13px;
 }
 
+.table-scroll {
+  width: 100%;
+  max-height: 520px;
+  overflow: auto;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.table-scroll .table {
+  margin-top: 0;
+}
+
+.data-table {
+  min-width: 1120px;
+}
+
 .table th,
 .table td {
   border-bottom: 1px solid var(--line);
@@ -924,9 +941,18 @@ button {
 }
 
 .table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: #f7f9fb;
   color: #17261f;
   font-weight: 700;
+}
+
+.table td {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-pill {
@@ -974,9 +1000,14 @@ button {
   background: #ffffff;
 }
 
-.pagination button:first-of-type {
+.pagination button.active {
   background: #005b43;
   color: #ffffff;
+}
+
+.pagination button:disabled {
+  color: #a2aab4;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1180px) {

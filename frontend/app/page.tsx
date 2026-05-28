@@ -121,6 +121,8 @@ export default function Home() {
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isSavingMasters, setIsSavingMasters] = useState(false);
   const [isCreatingRun, setIsCreatingRun] = useState(false);
+  const [resultsPage, setResultsPage] = useState(1);
+  const [timestampDeptPage, setTimestampDeptPage] = useState(1);
 
   const activeMasterMap = useMemo(
     () =>
@@ -508,11 +510,20 @@ export default function Home() {
         ) : null}
 
         {activeTab === "results" ? (
-          <ResultsPanel reportData={reportData} standalone />
+          <ResultsPanel
+            page={resultsPage}
+            reportData={reportData}
+            setPage={setResultsPage}
+            standalone
+          />
         ) : null}
 
         {activeTab === "timestamp_dept" ? (
-          <TimestampWithDeptPage reportData={reportData} />
+          <TimestampWithDeptPage
+            page={timestampDeptPage}
+            reportData={reportData}
+            setPage={setTimestampDeptPage}
+          />
         ) : null}
 
         {activeTab === "report" ? (
@@ -1003,50 +1014,71 @@ function RunAllocationPage({
   );
 }
 
-function TimestampWithDeptPage({ reportData }: { reportData: ReportData | null }) {
-  const rows = reportData?.timestampRows.slice(0, 80) ?? [];
+const pageSize = 10;
+
+function TimestampWithDeptPage({
+  page,
+  reportData,
+  setPage,
+}: {
+  page: number;
+  reportData: ReportData | null;
+  setPage: (page: number) => void;
+}) {
+  const allRows = reportData?.timestampRows ?? [];
+  const totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const rows = allRows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <section className="panel results-panel">
       <div className="panel-title-row">
         <h3>Timestamp With Dept</h3>
-        <span className="table-count">{rows.length} rows</span>
+        <span className="table-count">{allRows.length} rows</span>
       </div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Employee ID</th>
-            <th>Name</th>
-            <th>Dept</th>
-            <th>Position</th>
-            <th>Shift</th>
-            <th>Shift Start</th>
-            <th>Scan In</th>
-            <th>Status</th>
-            <th>Minutes Late</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={`${row.empId}-${row.scanIn}`}>
-              <td>{row.empId}</td>
-              <td>{row.name}</td>
-              <td>{row.dept}</td>
-              <td>{row.position}</td>
-              <td>{row.shift}</td>
-              <td>{row.shiftStart}</td>
-              <td>{row.scanIn}</td>
-              <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
-              <td>{row.minutesLate}</td>
-            </tr>
-          ))}
-          {rows.length === 0 ? (
+      <div className="table-scroll">
+        <table className="table data-table">
+          <thead>
             <tr>
-              <td colSpan={9}>ยังไม่มี timestamp ที่ merge หน่วยงานแล้ว</td>
+              <th>Employee ID</th>
+              <th>Name</th>
+              <th>Dept</th>
+              <th>Position</th>
+              <th>Shift</th>
+              <th>Shift Start</th>
+              <th>Scan In</th>
+              <th>Status</th>
+              <th>Minutes Late</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={`${row.empId}-${row.scanIn}`}>
+                <td>{row.empId}</td>
+                <td>{row.name}</td>
+                <td>{row.dept}</td>
+                <td>{row.position}</td>
+                <td>{row.shift}</td>
+                <td>{row.shiftStart}</td>
+                <td>{row.scanIn}</td>
+                <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
+                <td>{row.minutesLate}</td>
+              </tr>
+            ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={9}>ยังไม่มี timestamp ที่ merge หน่วยงานแล้ว</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+      <TablePagination
+        page={safePage}
+        pageSize={pageSize}
+        setPage={setPage}
+        totalRows={allRows.length}
+      />
     </section>
   );
 }
@@ -1080,16 +1112,20 @@ function LatestMasterFiles({
 }
 
 function ResultsPanel({
+  page = 1,
   reportData,
+  setPage,
   standalone = false,
 }: {
+  page?: number;
   reportData: ReportData | null;
+  setPage?: (page: number) => void;
   standalone?: boolean;
 }) {
-  const rows = reportData?.records
-    .filter((record) => record.status !== "Absent")
-    .slice(0, 10) ?? [];
-  const totalRows = reportData?.records.filter((record) => record.status !== "Absent").length ?? 0;
+  const allRows = reportData?.records.filter((record) => record.status !== "Absent") ?? [];
+  const totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const rows = allRows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   return (
     <section className={`panel results-panel ${standalone ? "standalone" : ""}`}>
@@ -1102,53 +1138,91 @@ function ResultsPanel({
           </button>
         </div>
       </div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>No.</th>
-            <th>รหัสพนักงาน</th>
-            <th>ชื่อ-สกุล</th>
-            <th>หน่วยงาน</th>
-            <th>ตำแหน่ง</th>
-            <th>สถานีงานที่จัดสรร</th>
-            <th>ระดับ Skill</th>
-            <th>เวลาเข้า</th>
-            <th>สถานะ</th>
-          </tr>
+      <div className="table-scroll">
+        <table className="table data-table">
+          <thead>
+            <tr>
+              <th>No.</th>
+              <th>รหัสพนักงาน</th>
+              <th>ชื่อ-สกุล</th>
+              <th>หน่วยงาน</th>
+              <th>ตำแหน่ง</th>
+              <th>สถานีงานที่จัดสรร</th>
+              <th>ระดับ Skill</th>
+              <th>เวลาเข้า</th>
+              <th>สถานะ</th>
+            </tr>
           </thead>
           <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${row.empId}-${row.scanIn}`}>
-              <td>{index + 1}</td>
-              <td>{row.empId}</td>
-              <td>{row.name}</td>
-              <td>{row.dept}</td>
-              <td>{row.position}</td>
-              <td>{row.dept}</td>
-              <td>-</td>
-              <td>{row.scanIn}</td>
-              <td>
-                <span className={`status-pill ${row.status.toLowerCase()}`}>
-                  {row.status}
-                </span>
-              </td>
-            </tr>
-          ))}
-          {rows.length === 0 ? (
-            <tr>
-              <td colSpan={9}>ยังไม่มีข้อมูลจากไฟล์ที่อัปโหลด</td>
-            </tr>
-          ) : null}
+            {rows.map((row, index) => (
+              <tr key={`${row.empId}-${row.scanIn}`}>
+                <td>{(safePage - 1) * pageSize + index + 1}</td>
+                <td>{row.empId}</td>
+                <td>{row.name}</td>
+                <td>{row.dept}</td>
+                <td>{row.position}</td>
+                <td>{row.dept}</td>
+                <td>-</td>
+                <td>{row.scanIn}</td>
+                <td>
+                  <span className={`status-pill ${row.status.toLowerCase()}`}>
+                    {row.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={9}>ยังไม่มีข้อมูลจากไฟล์ที่อัปโหลด</td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
-        <div className="pagination">
-        <span>1-{rows.length} จาก {totalRows} รายการ</span>
-        <button type="button">1</button>
-        <button type="button">2</button>
-        <button type="button">3</button>
-        <button type="button">...</button>
       </div>
+      <TablePagination
+        page={safePage}
+        pageSize={pageSize}
+        setPage={setPage}
+        totalRows={allRows.length}
+      />
     </section>
+  );
+}
+
+function TablePagination({
+  page,
+  pageSize,
+  setPage,
+  totalRows,
+}: {
+  page: number;
+  pageSize: number;
+  setPage?: (page: number) => void;
+  totalRows: number;
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const start = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, totalRows);
+  const pages = Array.from({ length: Math.min(totalPages, 5) }, (_, index) => index + 1);
+
+  return (
+    <div className="pagination">
+      <span>{start}-{end} จาก {totalRows} รายการ</span>
+      <button disabled={!setPage || page <= 1} onClick={() => setPage?.(page - 1)} type="button">‹</button>
+      {pages.map((item) => (
+        <button
+          className={item === page ? "active" : ""}
+          disabled={!setPage}
+          key={item}
+          onClick={() => setPage?.(item)}
+          type="button"
+        >
+          {item}
+        </button>
+      ))}
+      {totalPages > 5 ? <span>...</span> : null}
+      <button disabled={!setPage || page >= totalPages} onClick={() => setPage?.(page + 1)} type="button">›</button>
+    </div>
   );
 }
 

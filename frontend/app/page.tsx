@@ -126,6 +126,11 @@ export default function Home() {
   const [resultsQuery, setResultsQuery] = useState("");
   const [resultsDept, setResultsDept] = useState("all");
   const [resultsStatus, setResultsStatus] = useState("all");
+  const [timestampQuery, setTimestampQuery] = useState("");
+  const [timestampDept, setTimestampDept] = useState("all");
+  const [timestampStatus, setTimestampStatus] = useState("all");
+  const [reportLateQuery, setReportLateQuery] = useState("");
+  const [reportLateDept, setReportLateDept] = useState("all");
 
   const activeMasterMap = useMemo(
     () =>
@@ -529,17 +534,27 @@ export default function Home() {
 
         {activeTab === "timestamp_dept" ? (
           <TimestampWithDeptPage
+            deptFilter={timestampDept}
             page={timestampDeptPage}
+            query={timestampQuery}
             reportData={reportData}
+            setDeptFilter={setTimestampDept}
             setPage={setTimestampDeptPage}
+            setQuery={setTimestampQuery}
+            setStatusFilter={setTimestampStatus}
+            statusFilter={timestampStatus}
           />
         ) : null}
 
         {activeTab === "report" ? (
           <ReportDashboard
+            deptFilter={reportLateDept}
             isLoadingReport={isLoadingReport}
             loadReportDashboard={loadReportDashboard}
+            query={reportLateQuery}
             reportData={reportData}
+            setDeptFilter={setReportLateDept}
+            setQuery={setReportLateQuery}
           />
         ) : null}
 
@@ -1026,24 +1041,96 @@ function RunAllocationPage({
 const pageSize = 10;
 
 function TimestampWithDeptPage({
+  deptFilter,
   page,
+  query,
   reportData,
+  setDeptFilter,
   setPage,
+  setQuery,
+  setStatusFilter,
+  statusFilter,
 }: {
+  deptFilter: string;
   page: number;
+  query: string;
   reportData: ReportData | null;
+  setDeptFilter: (value: string) => void;
   setPage: (page: number) => void;
+  setQuery: (value: string) => void;
+  setStatusFilter: (value: string) => void;
+  statusFilter: string;
 }) {
-  const allRows = reportData?.timestampRows ?? [];
+  const sourceRows = reportData?.timestampRows ?? [];
+  const deptOptions = Array.from(new Set(sourceRows.map((record) => record.dept))).sort();
+  const normalizedQuery = query.trim().toLowerCase();
+  const allRows = sourceRows.filter((record) => {
+    const matchesQuery = !normalizedQuery || [
+      record.empId,
+      record.name,
+      record.dept,
+      record.position,
+      record.scanIn,
+      record.status,
+    ].some((value) => String(value).toLowerCase().includes(normalizedQuery));
+    const matchesDept = deptFilter === "all" || record.dept === deptFilter;
+    const matchesStatus = statusFilter === "all" || record.status === statusFilter;
+    return matchesQuery && matchesDept && matchesStatus;
+  });
   const totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const rows = allRows.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  function updateFilter(callback: () => void) {
+    callback();
+    setPage(1);
+  }
 
   return (
     <section className="panel results-panel">
       <div className="panel-title-row">
         <h3>Timestamp With Dept</h3>
         <span className="table-count">{allRows.length} rows</span>
+      </div>
+      <div className="table-filters">
+        <input
+          aria-label="ค้นหา timestamp"
+          placeholder="ค้นหา รหัส ชื่อ หน่วยงาน สถานะ"
+          type="search"
+          value={query}
+          onChange={(event) => updateFilter(() => setQuery(event.target.value))}
+        />
+        <select
+          aria-label="หน่วยงาน"
+          value={deptFilter}
+          onChange={(event) => updateFilter(() => setDeptFilter(event.target.value))}
+        >
+          <option value="all">ทุกหน่วยงาน</option>
+          {deptOptions.map((dept) => (
+            <option key={dept} value={dept}>{dept}</option>
+          ))}
+        </select>
+        <select
+          aria-label="สถานะ"
+          value={statusFilter}
+          onChange={(event) => updateFilter(() => setStatusFilter(event.target.value))}
+        >
+          <option value="all">ทุกสถานะ</option>
+          <option value="Present">Present</option>
+          <option value="Late">Late</option>
+          <option value="Absent">Absent</option>
+        </select>
+        <button
+          className="ghost-button"
+          onClick={() => updateFilter(() => {
+            setQuery("");
+            setDeptFilter("all");
+            setStatusFilter("all");
+          })}
+          type="button"
+        >
+          Clear
+        </button>
       </div>
       <div className="table-scroll">
         <table className="table data-table">
@@ -1309,13 +1396,21 @@ function TablePagination({
 }
 
 function ReportDashboard({
+  deptFilter,
   isLoadingReport,
   loadReportDashboard,
+  query,
   reportData,
+  setDeptFilter,
+  setQuery,
 }: {
+  deptFilter: string;
   isLoadingReport: boolean;
   loadReportDashboard: () => Promise<void>;
+  query: string;
   reportData: ReportData | null;
+  setDeptFilter: (value: string) => void;
+  setQuery: (value: string) => void;
 }) {
   const data = reportData ?? {
     targetDate: "-",
@@ -1335,6 +1430,20 @@ function ReportDashboard({
   const presentPercent = data.totalEmployees ? (data.present / data.totalEmployees) * 100 : 0;
   const latePercent = data.totalEmployees ? (data.late / data.totalEmployees) * 100 : 0;
   const absentPercent = data.totalEmployees ? (data.absent / data.totalEmployees) * 100 : 0;
+  const lateDeptOptions = Array.from(new Set(data.lateRows.map((row) => row.dept))).sort();
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredLateRows = data.lateRows.filter((row) => {
+    const matchesQuery = !normalizedQuery || [
+      row.empId,
+      row.name,
+      row.dept,
+      row.position,
+      row.scanIn,
+      row.status,
+    ].some((value) => String(value).toLowerCase().includes(normalizedQuery));
+    const matchesDept = deptFilter === "all" || row.dept === deptFilter;
+    return matchesQuery && matchesDept;
+  });
 
   return (
     <section className="report-page">
@@ -1428,6 +1537,35 @@ function ReportDashboard({
       </section>
 
       <section className="panel report-table-panel">
+        <div className="table-filters report-table-filters">
+          <input
+            aria-label="ค้นหาคนมาสาย"
+            placeholder="ค้นหา ชื่อ รหัส หน่วยงาน"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <select
+            aria-label="หน่วยงาน"
+            value={deptFilter}
+            onChange={(event) => setDeptFilter(event.target.value)}
+          >
+            <option value="all">ทุกหน่วยงาน</option>
+            {lateDeptOptions.map((dept) => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
+          <button
+            className="ghost-button"
+            onClick={() => {
+              setQuery("");
+              setDeptFilter("all");
+            }}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
         <table className="table">
           <thead>
             <tr>
@@ -1441,7 +1579,7 @@ function ReportDashboard({
             </tr>
           </thead>
           <tbody>
-            {data.lateRows.map((row) => (
+            {filteredLateRows.map((row) => (
               <tr key={`${row.empId}-${row.scanIn}`}>
                 <td>{row.dept}</td>
                 <td>{row.name}</td>
@@ -1452,7 +1590,7 @@ function ReportDashboard({
                 <td>{row.minutesLate}</td>
               </tr>
             ))}
-            {data.lateRows.length === 0 ? (
+            {filteredLateRows.length === 0 ? (
               <tr>
                 <td colSpan={7}>กด Load Uploaded Data เพื่อสร้างรายงานจากไฟล์ที่อัปโหลด</td>
               </tr>

@@ -122,6 +122,7 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [loadedReportKey, setLoadedReportKey] = useState("");
   const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isSavingMasters, setIsSavingMasters] = useState(false);
   const [isCreatingRun, setIsCreatingRun] = useState(false);
@@ -146,11 +147,20 @@ export default function Home() {
   );
 
   const latestRun = runs[0];
-  const completedRuns = runs.filter((run) => run.status === "completed").length;
-  const pendingRuns = runs.filter((run) => run.status !== "completed").length;
-  const totalActivePeople = 852;
-  const assignedPeople = latestRun?.status === "completed" ? 806 : completedRuns * 120;
-  const noSkillPeople = Math.max(46, pendingRuns * 8);
+  const reportSourceKey =
+    activeMasterMap.employee_master?.file_path && latestRun?.scan_file_path
+      ? [
+          activeMasterMap.employee_master.file_path,
+          activeMasterMap.manpower_plan?.file_path,
+          latestRun.scan_file_path,
+        ].filter(Boolean).join("|")
+      : "";
+  const totalEmployees = reportData?.totalEmployees ?? 0;
+  const presentPeople = reportData?.present ?? 0;
+  const latePeople = reportData?.late ?? 0;
+  const absentPeople = reportData?.absent ?? 0;
+  const totalActivePeople = presentPeople + latePeople;
+  const presentRate = totalEmployees ? Math.round((totalActivePeople / totalEmployees) * 100) : 0;
   const workDate = new Date().toLocaleDateString("th-TH", {
     day: "numeric",
     month: "long",
@@ -161,6 +171,14 @@ export default function Home() {
   useEffect(() => {
     void loadDashboard();
   }, []);
+
+  useEffect(() => {
+    if (!reportSourceKey || loadedReportKey === reportSourceKey || isLoadingReport) {
+      return;
+    }
+
+    void loadReportDashboard();
+  }, [reportSourceKey, loadedReportKey, isLoadingReport]);
 
   async function loadDashboard() {
     await Promise.all([loadRuns(), loadActiveMasters()]);
@@ -338,6 +356,11 @@ export default function Home() {
       ]);
 
       setReportData(buildReportData(employeeRows, scanRows, manpowerRows));
+      setLoadedReportKey([
+        employeeMaster.file_path,
+        activeMasterMap.manpower_plan?.file_path,
+        latestRun.scan_file_path,
+      ].filter(Boolean).join("|"));
     } catch (reportError) {
       setError(reportError instanceof Error ? reportError.message : "โหลด report ไม่สำเร็จ");
     } finally {
@@ -420,38 +443,39 @@ export default function Home() {
                 label="พนักงานที่มาทำงาน"
                 value={totalActivePeople.toLocaleString()}
                 unit="คน"
-                note="จากทั้งหมด 1,024 คน"
-                progress={83}
+                note={`จากทั้งหมด ${totalEmployees.toLocaleString()} คน`}
+                progress={presentRate}
               />
               <KpiCard
                 icon={<ClipboardCheck size={34} />}
                 tone="blue"
-                label="จัดสรรสำเร็จ"
-                value={assignedPeople.toLocaleString()}
+                label="Present"
+                value={presentPeople.toLocaleString()}
                 unit="คน"
-                note="94.60% ของผู้ที่มาทำงาน"
+                note="พนักงานที่เข้างานตรงเวลา"
               />
               <KpiCard
                 icon={<UsersRound size={34} />}
                 tone="amber"
-                label="รอจัดสรร (ไม่มี Skill)"
-                value={noSkillPeople.toLocaleString()}
+                label="Late"
+                value={latePeople.toLocaleString()}
                 unit="คน"
-                note="5.40% ของผู้ที่มาทำงาน"
+                note="พนักงานที่มาสาย"
               />
               <KpiCard
                 icon={<BriefcaseBusiness size={34} />}
                 tone="purple"
-                label="หน่วยงานทั้งหมด"
-                value="12"
-                unit="แผนก"
-                note="สถานีงานทั้งหมด 68 สถานี"
+                label="Absent"
+                value={absentPeople.toLocaleString()}
+                unit="คน"
+                note="ไม่พบการสแกนเข้างาน"
               />
             </section>
 
             <DashboardPanels
               activeMasterMap={activeMasterMap}
-              assignedPeople={assignedPeople}
+              assignedPeople={presentPeople}
+              reportData={reportData}
               totalActivePeople={totalActivePeople}
             />
           </>
@@ -716,12 +740,24 @@ function getSafeFileExtension(filename: string) {
 function DashboardPanels({
   activeMasterMap,
   assignedPeople,
+  reportData,
   totalActivePeople,
 }: {
   activeMasterMap: Partial<Record<MasterFileKey, MasterFile>>;
   assignedPeople: number;
+  reportData: ReportData | null;
   totalActivePeople: number;
 }) {
+  const total = reportData?.totalEmployees ?? 0;
+  const present = reportData?.present ?? 0;
+  const late = reportData?.late ?? 0;
+  const absent = reportData?.absent ?? 0;
+  const presentPercent = total ? ((present / total) * 100).toFixed(1) : "0.0";
+  const latePercent = total ? ((late / total) * 100).toFixed(1) : "0.0";
+  const absentPercent = total ? ((absent / total) * 100).toFixed(1) : "0.0";
+  const topDeptRows = reportData?.deptRows?.slice(0, 5) ?? deptRows;
+  const maxDeptTotal = Math.max(...topDeptRows.map((row) => "total" in row ? row.total : row.value), 1);
+
   return (
     <>
       <section className="dashboard-grid">
@@ -735,10 +771,10 @@ function DashboardPanels({
               </div>
             </div>
             <div className="legend">
-              <LegendRow color="green" label="จัดสรรสำเร็จ" value="806" percent="94.60%" />
-              <LegendRow color="amber" label="ไม่มี Skill" value="46" percent="5.40%" />
-              <LegendRow color="gray" label="รอข้อมูล" value="0" percent="0.00%" />
-              <LegendRow color="red" label="ขาดงาน" value="172" percent="16.80%" />
+              <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPercent}%`} />
+              <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePercent}%`} />
+              <LegendRow color="gray" label="รอข้อมูล" value="0" percent="0.0%" />
+              <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPercent}%`} />
             </div>
           </div>
           <p className="panel-note">หมายเหตุ : ขาดงาน คือ พนักงานที่ไม่พบการสแกนเข้างาน</p>
@@ -750,15 +786,18 @@ function DashboardPanels({
             <button className="ghost-button" type="button">ทั้งหมด <ChevronDown size={14} /></button>
           </div>
           <div className="dept-bars">
-            {deptRows.map((row) => (
-              <div className="dept-row" key={row.dept}>
-                <span>{row.dept}</span>
-                <div className="bar-track">
-                  <div className="bar-fill" style={{ width: `${row.percent}%` }} />
+            {topDeptRows.map((row) => {
+              const value = "total" in row ? row.total : row.value;
+              return (
+                <div className="dept-row" key={row.dept}>
+                  <span>{row.dept}</span>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{ width: `${(value / maxDeptTotal) * 100}%` }} />
+                  </div>
+                  <strong>{value}</strong>
                 </div>
-                <strong>{row.value}</strong>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <button className="link-button" type="button">ดูทั้งหมด</button>
         </section>

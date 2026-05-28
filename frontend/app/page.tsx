@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Database, FileSpreadsheet, UploadCloud, UsersRound } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import type { User } from "@supabase/supabase-js";
 
 type AllocationRun = {
   id: string;
@@ -30,10 +29,9 @@ const masterFileTypes = [
 
 type MasterFileKey = (typeof masterFileTypes)[number]["key"];
 type MasterUploadState = Record<MasterFileKey, File | null>;
+const publicWorkspace = "public";
 
 export default function Home() {
-  const [user, setUser] = useState<User | null>(null);
-  const [email, setEmail] = useState("");
   const [masterUploads, setMasterUploads] = useState<MasterUploadState>({
     employee_master: null,
     manpower_plan: null,
@@ -67,49 +65,8 @@ export default function Home() {
   );
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-    });
-
-    const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-      },
-    );
-
-    return () => {
-      subscription.subscription.unsubscribe();
-    };
+    void loadDashboard();
   }, []);
-
-  useEffect(() => {
-    if (user) {
-      void loadDashboard();
-      return;
-    }
-
-    setActiveMasters([]);
-    setRuns([]);
-  }, [user]);
-
-  async function sendMagicLink() {
-    setError("");
-    setMessage("");
-
-    const { error: signInError } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: window.location.origin,
-      },
-    });
-
-    if (signInError) {
-      setError(signInError.message);
-      return;
-    }
-
-    setMessage("ส่งลิงก์เข้าใช้งานไปที่อีเมลแล้ว");
-  }
 
   async function loadDashboard() {
     await Promise.all([loadRuns(), loadActiveMasters()]);
@@ -157,18 +114,12 @@ export default function Home() {
     setMessage("");
     setIsSavingMasters(true);
 
-    if (!user) {
-      setError("กรุณา login ก่อน upload ไฟล์");
-      setIsSavingMasters(false);
-      return;
-    }
-
     for (const item of masterFileTypes) {
       const file = masterUploads[item.key];
       if (!file) continue;
 
       const fileId = crypto.randomUUID();
-      const path = `${user.id}/masters/${item.key}/${fileId}-${file.name}`;
+      const path = `${publicWorkspace}/masters/${item.key}/${fileId}-${file.name}`;
       const { error: uploadError } = await supabase.storage
         .from("workforce-inputs")
         .upload(path, file, { upsert: true });
@@ -182,7 +133,7 @@ export default function Home() {
       const { error: deactivateError } = await supabase
         .from("master_data_files")
         .update({ is_active: false })
-        .eq("owner_id", user.id)
+        .is("owner_id", null)
         .eq("file_type", item.key);
 
       if (deactivateError) {
@@ -194,7 +145,7 @@ export default function Home() {
       const { error: insertError } = await supabase
         .from("master_data_files")
         .insert({
-          owner_id: user.id,
+          owner_id: null,
           file_type: item.key,
           file_path: path,
           original_filename: file.name,
@@ -223,12 +174,6 @@ export default function Home() {
     setMessage("");
     setIsCreatingRun(true);
 
-    if (!user) {
-      setError("กรุณา login ก่อนสร้าง run");
-      setIsCreatingRun(false);
-      return;
-    }
-
     if (!timestampFile) {
       setError("กรุณาเลือกไฟล์ timestamp");
       setIsCreatingRun(false);
@@ -242,7 +187,7 @@ export default function Home() {
     }
 
     const runId = crypto.randomUUID();
-    const scanPath = `${user.id}/runs/${runId}/timestamp-${timestampFile.name}`;
+    const scanPath = `${publicWorkspace}/runs/${runId}/timestamp-${timestampFile.name}`;
     const { error: uploadError } = await supabase.storage
       .from("workforce-inputs")
       .upload(scanPath, timestampFile, { upsert: true });
@@ -255,7 +200,7 @@ export default function Home() {
 
     const { error: insertError } = await supabase.from("allocation_runs").insert({
       id: runId,
-      owner_id: user.id,
+      owner_id: null,
       status: "uploaded",
       scan_file_path: scanPath,
       master_file_path: activeMasterMap.employee_master?.file_path,
@@ -297,47 +242,11 @@ export default function Home() {
         <div className="topbar">
           <div>
             <h1 className="title">จัดสรรคนประจำวัน</h1>
-            <p className="subtitle">Upload ไฟล์ input แล้วติดตามสถานะการประมวลผล</p>
+            <p className="subtitle">จัดเก็บ master files แล้วอัปโหลด timestamp รายวัน</p>
           </div>
-          {user ? (
-            <button
-              className="button"
-              onClick={() => supabase.auth.signOut()}
-              type="button"
-            >
-              Sign out
-            </button>
-          ) : null}
         </div>
 
         <div className="grid">
-          {!user ? (
-            <section className="panel">
-              <h2>Login</h2>
-              <div className="field">
-                <label htmlFor="email">Email</label>
-                <input
-                  className="file-input"
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="name@company.com"
-                />
-              </div>
-              <button
-                className="button"
-                disabled={!email}
-                onClick={sendMagicLink}
-                type="button"
-              >
-                Send Magic Link
-              </button>
-              {message ? <div className="message">{message}</div> : null}
-              {error ? <div className="message error">{error}</div> : null}
-            </section>
-          ) : null}
-
           <section className="panel">
             <h2>Master Files</h2>
             <div className="master-list">

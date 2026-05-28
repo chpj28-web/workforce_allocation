@@ -9,7 +9,7 @@ create table if not exists public.profiles (
 
 create table if not exists public.allocation_runs (
   id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null references auth.users(id) on delete cascade,
+  owner_id uuid references auth.users(id) on delete cascade,
   target_date date,
   status text not null default 'uploaded'
     check (status in ('uploaded', 'queued', 'processing', 'completed', 'failed')),
@@ -26,7 +26,7 @@ create table if not exists public.allocation_runs (
 
 create table if not exists public.master_data_files (
   id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null references auth.users(id) on delete cascade,
+  owner_id uuid references auth.users(id) on delete cascade,
   file_type text not null check (file_type in ('employee_master', 'manpower_plan', 'skill_matrix')),
   file_path text not null,
   original_filename text,
@@ -90,10 +90,20 @@ on public.allocation_runs for all
 using (auth.uid() = owner_id)
 with check (auth.uid() = owner_id);
 
+create policy "runs_public_all"
+on public.allocation_runs for all
+using (owner_id is null)
+with check (owner_id is null);
+
 create policy "master_files_owner_all"
 on public.master_data_files for all
 using (auth.uid() = owner_id)
 with check (auth.uid() = owner_id);
+
+create policy "master_files_public_all"
+on public.master_data_files for all
+using (owner_id is null)
+with check (owner_id is null);
 
 create policy "results_owner_select"
 on public.allocation_results for select
@@ -106,6 +116,17 @@ using (
   )
 );
 
+create policy "results_public_select"
+on public.allocation_results for select
+using (
+  exists (
+    select 1
+    from public.allocation_runs runs
+    where runs.id = allocation_results.run_id
+      and runs.owner_id is null
+  )
+);
+
 create policy "gaps_owner_select"
 on public.gap_summaries for select
 using (
@@ -114,6 +135,17 @@ using (
     from public.allocation_runs runs
     where runs.id = gap_summaries.run_id
       and runs.owner_id = auth.uid()
+  )
+);
+
+create policy "gaps_public_select"
+on public.gap_summaries for select
+using (
+  exists (
+    select 1
+    from public.allocation_runs runs
+    where runs.id = gap_summaries.run_id
+      and runs.owner_id is null
   )
 );
 
@@ -139,6 +171,20 @@ with check (
   and auth.uid()::text = (storage.foldername(name))[1]
 );
 
+create policy "input_files_public_select"
+on storage.objects for select
+using (
+  bucket_id = 'workforce-inputs'
+  and (storage.foldername(name))[1] = 'public'
+);
+
+create policy "input_files_public_insert"
+on storage.objects for insert
+with check (
+  bucket_id = 'workforce-inputs'
+  and (storage.foldername(name))[1] = 'public'
+);
+
 create policy "input_files_owner_update"
 on storage.objects for update
 using (
@@ -150,9 +196,27 @@ with check (
   and auth.uid()::text = (storage.foldername(name))[1]
 );
 
+create policy "input_files_public_update"
+on storage.objects for update
+using (
+  bucket_id = 'workforce-inputs'
+  and (storage.foldername(name))[1] = 'public'
+)
+with check (
+  bucket_id = 'workforce-inputs'
+  and (storage.foldername(name))[1] = 'public'
+);
+
 create policy "output_files_owner_select"
 on storage.objects for select
 using (
   bucket_id = 'workforce-outputs'
   and auth.uid()::text = (storage.foldername(name))[1]
+);
+
+create policy "output_files_public_select"
+on storage.objects for select
+using (
+  bucket_id = 'workforce-outputs'
+  and (storage.foldername(name))[1] = 'public'
 );

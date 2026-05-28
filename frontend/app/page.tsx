@@ -42,6 +42,7 @@ type AttendanceRecord = {
   empId: string;
   name: string;
   dept: string;
+  position: string;
   shift: string;
   shiftStart: string;
   scanIn: string;
@@ -57,6 +58,7 @@ type ReportData = {
   absent: number;
   deptRows: Array<{ dept: string; present: number; late: number; absent: number; total: number }>;
   lateRows: AttendanceRecord[];
+  records: AttendanceRecord[];
 };
 
 const masterFileTypes = [
@@ -94,14 +96,6 @@ const deptRows = [
   { dept: "ฝ่ายบรรจุ", value: 158, percent: 51 },
   { dept: "ฝ่ายซ่อมบำรุง", value: 95, percent: 30 },
   { dept: "ฝ่ายคลังสินค้า", value: 86, percent: 28 },
-];
-
-const allocationRows = [
-  ["10012345", "สมชาย ใจดี", "ฝ่ายตัดแต่ง", "พนักงาน", "ตัดแต่งมันหลัง", "4", "06:45"],
-  ["10012346", "อารีย์ รักงาน", "ฝ่ายผลิต", "พนักงาน", "ตัดชิ้นส่วน", "3", "06:48"],
-  ["10012347", "วิชัย กล้าแข็ง", "ฝ่ายผลิต", "พนักงาน", "ล้างทำความสะอาด", "2", "06:50"],
-  ["10012348", "รนพร ขยันดี", "ฝ่ายบรรจุ", "พนักงาน", "บรรจุสุญญากาศ", "3", "06:52"],
-  ["10012349", "ประเสริฐ ทองดี", "ฝ่ายซ่อมบำรุง", "ช่างเทคนิค", "ซ่อมบำรุงเครื่องจักร", "4", "06:55"],
 ];
 
 type MasterFileKey = (typeof masterFileTypes)[number]["key"];
@@ -578,6 +572,7 @@ function buildReportData(
       empId,
       name: `${firstName} ${lastName}`.trim() || fallbackName || empId,
       dept: String(row["หน่วยงาน"] ?? row["dept"] ?? row["Name (Section)"] ?? "ไม่ระบุ").trim() || "ไม่ระบุ",
+      position: String(row["Title (Position)"] ?? row["position"] ?? row["ตำแหน่ง"] ?? "พนักงาน").trim() || "พนักงาน",
     };
   }).filter((row) => row.empId);
 
@@ -610,6 +605,7 @@ function buildReportData(
         empId,
         name: entry.name || empId,
         dept: "ไม่ระบุ",
+        position: "พนักงาน",
       }));
 
   const records: AttendanceRecord[] = baseEmployees.map((employee) => {
@@ -623,6 +619,7 @@ function buildReportData(
       empId: employee.empId,
       name: employee.name,
       dept: employee.dept,
+      position: employee.position,
       shift: "กะ 1",
       shiftStart,
       scanIn: scanIn ? toTimeText(scanIn) : "-",
@@ -660,6 +657,7 @@ function buildReportData(
       .filter((record) => record.status === "Late")
       .sort((a, b) => b.minutesLate - a.minutesLate)
       .slice(0, 80),
+    records,
   };
 }
 
@@ -809,7 +807,7 @@ function DashboardPanels({
         </section>
       </section>
 
-      <ResultsPanel assignedPeople={assignedPeople} />
+      <ResultsPanel reportData={reportData} />
     </>
   );
 }
@@ -952,7 +950,12 @@ function LatestMasterFiles({
   );
 }
 
-function ResultsPanel({ assignedPeople }: { assignedPeople: number }) {
+function ResultsPanel({ reportData }: { reportData: ReportData | null }) {
+  const rows = reportData?.records
+    .filter((record) => record.status !== "Absent")
+    .slice(0, 10) ?? [];
+  const totalRows = reportData?.records.filter((record) => record.status !== "Absent").length ?? 0;
+
   return (
     <section className="panel results-panel">
       <div className="panel-title-row">
@@ -977,21 +980,34 @@ function ResultsPanel({ assignedPeople }: { assignedPeople: number }) {
             <th>เวลาเข้า</th>
             <th>สถานะ</th>
           </tr>
-        </thead>
-        <tbody>
-          {allocationRows.map((row, index) => (
-            <tr key={row[0]}>
+          </thead>
+          <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${row.empId}-${row.scanIn}`}>
               <td>{index + 1}</td>
-              {row.map((cell) => (
-                <td key={`${row[0]}-${cell}`}>{cell}</td>
-              ))}
-              <td><span className="status-pill">จัดสรรสำเร็จ</span></td>
+              <td>{row.empId}</td>
+              <td>{row.name}</td>
+              <td>{row.dept}</td>
+              <td>{row.position}</td>
+              <td>{row.dept}</td>
+              <td>-</td>
+              <td>{row.scanIn}</td>
+              <td>
+                <span className={`status-pill ${row.status.toLowerCase()}`}>
+                  {row.status}
+                </span>
+              </td>
             </tr>
           ))}
-        </tbody>
-      </table>
-      <div className="pagination">
-        <span>1-5 จาก {assignedPeople || 806} รายการ</span>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={9}>ยังไม่มีข้อมูลจากไฟล์ที่อัปโหลด</td>
+            </tr>
+          ) : null}
+          </tbody>
+        </table>
+        <div className="pagination">
+        <span>1-{rows.length} จาก {totalRows} รายการ</span>
         <button type="button">1</button>
         <button type="button">2</button>
         <button type="button">3</button>
@@ -1018,6 +1034,7 @@ function ReportDashboard({
     absent: 0,
     deptRows: [],
     lateRows: [],
+    records: [],
   };
   const lateRate = data.totalEmployees
     ? ((data.late / data.totalEmployees) * 100).toFixed(1)

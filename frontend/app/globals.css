@@ -913,6 +913,21 @@ button {
   font-weight: 700;
 }
 
+.status-pill.late {
+  background: #fff0d7;
+  color: #b76c00;
+}
+
+.status-pill.absent {
+  background: #ffe0e0;
+  color: #b32626;
+}
+
+.status-pill.present {
+  background: #dff3e5;
+  color: #09843e;
+}
+
 .pagination {
   display: flex;
   align-items: center;

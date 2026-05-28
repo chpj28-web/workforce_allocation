@@ -52,6 +52,7 @@ type AttendanceRecord = {
 
 type ReportData = {
   targetDate: string;
+  targetMonthKey: string;
   totalEmployees: number;
   present: number;
   late: number;
@@ -60,6 +61,7 @@ type ReportData = {
   lateRows: AttendanceRecord[];
   records: AttendanceRecord[];
   timestampRows: AttendanceRecord[];
+  monthlyLateCounts: Record<string, number>;
 };
 
 const masterFileTypes = [
@@ -361,7 +363,34 @@ export default function Home() {
           : Promise.resolve([]),
       ]);
 
-      setReportData(buildReportData(employeeRows, scanRows, manpowerRows));
+      const latestReport = buildReportData(employeeRows, scanRows, manpowerRows);
+      const scanPaths = Array.from(
+        new Set(runs.map((run) => run.scan_file_path).filter(Boolean) as string[]),
+      );
+      const monthlyLateCounts: Record<string, number> = {};
+      const monthlyScanRows = await Promise.all(
+        scanPaths.map(async (path) => {
+          try {
+            return await downloadSheetRows(path);
+          } catch {
+            return [];
+          }
+        }),
+      );
+
+      for (const rows of monthlyScanRows) {
+        const dayReport = buildReportData(employeeRows, rows, manpowerRows);
+        if (dayReport.targetMonthKey !== latestReport.targetMonthKey) continue;
+
+        for (const lateRow of dayReport.lateRows) {
+          monthlyLateCounts[lateRow.empId] = (monthlyLateCounts[lateRow.empId] ?? 0) + 1;
+        }
+      }
+
+      setReportData({
+        ...latestReport,
+        monthlyLateCounts,
+      });
       setLoadedReportKey([
         employeeMaster.file_path,
         activeMasterMap.manpower_plan?.file_path,
@@ -656,6 +685,12 @@ function buildReportData(
       .flatMap((entry) => entry.times)
       .sort((a, b) => b.getTime() - a.getTime())[0]
       ?.toLocaleDateString("th-TH") ?? "-";
+  const latestTimestamp = Array.from(scanByEmp.values())
+    .flatMap((entry) => entry.times)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
+  const targetMonthKey = latestTimestamp
+    ? `${latestTimestamp.getFullYear()}-${String(latestTimestamp.getMonth() + 1).padStart(2, "0")}`
+    : "";
 
   const baseEmployees = employees.length
     ? employees
@@ -704,6 +739,7 @@ function buildReportData(
 
   return {
     targetDate,
+    targetMonthKey,
     totalEmployees: records.length,
     present: records.filter((record) => record.status === "Present").length,
     late: records.filter((record) => record.status === "Late").length,
@@ -717,6 +753,7 @@ function buildReportData(
       .slice(0, 80),
     records,
     timestampRows: records.filter((record) => record.scanIn !== "-"),
+    monthlyLateCounts: {},
   };
 }
 
@@ -1429,6 +1466,8 @@ function ReportDashboard({
     lateRows: [],
     records: [],
     timestampRows: [],
+    monthlyLateCounts: {},
+    targetMonthKey: "",
   };
   const scopedRecords = selectedDept === "all"
     ? data.records
@@ -1630,6 +1669,7 @@ function ReportDashboard({
               <th>scan_in</th>
               <th>Status</th>
               <th>Minutes Late</th>
+              <th>Late This Month</th>
             </tr>
           </thead>
           <tbody>
@@ -1642,11 +1682,12 @@ function ReportDashboard({
                 <td>{row.scanIn}</td>
                 <td>{row.status}</td>
                 <td>{row.minutesLate}</td>
+                <td>{data.monthlyLateCounts[row.empId] ?? 1}</td>
               </tr>
             ))}
             {filteredLateRows.length === 0 ? (
               <tr>
-                <td colSpan={7}>กด Load Uploaded Data เพื่อสร้างรายงานจากไฟล์ที่อัปโหลด</td>
+                <td colSpan={8}>กด Load Uploaded Data เพื่อสร้างรายงานจากไฟล์ที่อัปโหลด</td>
               </tr>
             ) : null}
           </tbody>

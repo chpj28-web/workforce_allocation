@@ -123,6 +123,9 @@ export default function Home() {
   const [isCreatingRun, setIsCreatingRun] = useState(false);
   const [resultsPage, setResultsPage] = useState(1);
   const [timestampDeptPage, setTimestampDeptPage] = useState(1);
+  const [resultsQuery, setResultsQuery] = useState("");
+  const [resultsDept, setResultsDept] = useState("all");
+  const [resultsStatus, setResultsStatus] = useState("all");
 
   const activeMasterMap = useMemo(
     () =>
@@ -511,10 +514,16 @@ export default function Home() {
 
         {activeTab === "results" ? (
           <ResultsPanel
+            deptFilter={resultsDept}
             page={resultsPage}
+            query={resultsQuery}
             reportData={reportData}
             setPage={setResultsPage}
+            setDeptFilter={setResultsDept}
+            setQuery={setResultsQuery}
+            setStatusFilter={setResultsStatus}
             standalone
+            statusFilter={resultsStatus}
           />
         ) : null}
 
@@ -1112,20 +1121,52 @@ function LatestMasterFiles({
 }
 
 function ResultsPanel({
+  deptFilter = "all",
   page = 1,
+  query = "",
   reportData,
+  setDeptFilter,
   setPage,
+  setQuery,
+  setStatusFilter,
   standalone = false,
+  statusFilter = "all",
 }: {
+  deptFilter?: string;
   page?: number;
+  query?: string;
   reportData: ReportData | null;
+  setDeptFilter?: (value: string) => void;
   setPage?: (page: number) => void;
+  setQuery?: (value: string) => void;
+  setStatusFilter?: (value: string) => void;
   standalone?: boolean;
+  statusFilter?: string;
 }) {
-  const allRows = reportData?.records.filter((record) => record.status !== "Absent") ?? [];
+  const sourceRows = reportData?.records.filter((record) => record.status !== "Absent") ?? [];
+  const deptOptions = Array.from(new Set(sourceRows.map((record) => record.dept))).sort();
+  const normalizedQuery = query.trim().toLowerCase();
+  const allRows = sourceRows.filter((record) => {
+    const matchesQuery = !normalizedQuery || [
+      record.empId,
+      record.name,
+      record.dept,
+      record.position,
+      record.scanIn,
+      record.status,
+    ].some((value) => String(value).toLowerCase().includes(normalizedQuery));
+    const matchesDept = deptFilter === "all" || record.dept === deptFilter;
+    const matchesStatus = statusFilter === "all" || record.status === statusFilter;
+    return matchesQuery && matchesDept && matchesStatus;
+  });
   const totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const rows = allRows.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  function updateFilter(callback: () => void) {
+    callback();
+    setPage?.(1);
+  }
 
   return (
     <section className={`panel results-panel ${standalone ? "standalone" : ""}`}>
@@ -1138,6 +1179,47 @@ function ResultsPanel({
           </button>
         </div>
       </div>
+      {standalone ? (
+        <div className="table-filters">
+          <input
+            aria-label="ค้นหา"
+            placeholder="ค้นหา รหัส ชื่อ หน่วยงาน สถานะ"
+            type="search"
+            value={query}
+            onChange={(event) => updateFilter(() => setQuery?.(event.target.value))}
+          />
+          <select
+            aria-label="หน่วยงาน"
+            value={deptFilter}
+            onChange={(event) => updateFilter(() => setDeptFilter?.(event.target.value))}
+          >
+            <option value="all">ทุกหน่วยงาน</option>
+            {deptOptions.map((dept) => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
+          <select
+            aria-label="สถานะ"
+            value={statusFilter}
+            onChange={(event) => updateFilter(() => setStatusFilter?.(event.target.value))}
+          >
+            <option value="all">ทุกสถานะ</option>
+            <option value="Present">Present</option>
+            <option value="Late">Late</option>
+          </select>
+          <button
+            className="ghost-button"
+            onClick={() => updateFilter(() => {
+              setQuery?.("");
+              setDeptFilter?.("all");
+              setStatusFilter?.("all");
+            })}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
       <div className="table-scroll">
         <table className="table data-table">
           <thead>

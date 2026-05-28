@@ -10,7 +10,7 @@ import {
   Database,
   Download,
   FileSpreadsheet,
-  Home,
+  Home as HomeIcon,
   LayoutGrid,
   LogOut,
   Settings,
@@ -44,7 +44,7 @@ const masterFileTypes = [
 ] as const;
 
 const navItems = [
-  { label: "Dashboard", icon: Home, active: true },
+  { label: "Dashboard", icon: HomeIcon, active: true },
   { label: "Upload Timestamp", icon: UploadCloud },
   { label: "Run Allocation", icon: ClipboardCheck },
   { label: "ผลลัพธ์การจัดสรร", icon: BriefcaseBusiness },

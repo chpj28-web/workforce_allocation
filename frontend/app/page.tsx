@@ -59,6 +59,7 @@ type ReportData = {
   deptRows: Array<{ dept: string; present: number; late: number; absent: number; total: number }>;
   lateRows: AttendanceRecord[];
   records: AttendanceRecord[];
+  timestampRows: AttendanceRecord[];
 };
 
 const masterFileTypes = [
@@ -495,6 +496,25 @@ export default function Home() {
           />
         ) : null}
 
+        {activeTab === "run" ? (
+          <RunAllocationPage
+            createDailyRun={createDailyRun}
+            hasAllActiveMasters={hasAllActiveMasters}
+            isCreatingRun={isCreatingRun}
+            latestRun={latestRun}
+            setTimestampFile={setTimestampFile}
+            timestampFile={timestampFile}
+          />
+        ) : null}
+
+        {activeTab === "results" ? (
+          <ResultsPanel reportData={reportData} standalone />
+        ) : null}
+
+        {activeTab === "timestamp_dept" ? (
+          <TimestampWithDeptPage reportData={reportData} />
+        ) : null}
+
         {activeTab === "report" ? (
           <ReportDashboard
             isLoadingReport={isLoadingReport}
@@ -503,7 +523,7 @@ export default function Home() {
           />
         ) : null}
 
-        {!["dashboard", "master", "timestamp", "report"].includes(activeTab) ? (
+        {!["dashboard", "master", "timestamp", "run", "results", "timestamp_dept", "report"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
@@ -658,6 +678,7 @@ function buildReportData(
       .sort((a, b) => b.minutesLate - a.minutesLate)
       .slice(0, 80),
     records,
+    timestampRows: records.filter((record) => record.scanIn !== "-"),
   };
 }
 
@@ -922,6 +943,114 @@ function TimestampPage({
   );
 }
 
+function RunAllocationPage({
+  createDailyRun,
+  hasAllActiveMasters,
+  isCreatingRun,
+  latestRun,
+  setTimestampFile,
+  timestampFile,
+}: {
+  createDailyRun: () => Promise<void>;
+  hasAllActiveMasters: boolean;
+  isCreatingRun: boolean;
+  latestRun?: AllocationRun;
+  setTimestampFile: (file: File | null) => void;
+  timestampFile: File | null;
+}) {
+  return (
+    <section className="workspace-grid">
+      <section className="panel run-panel">
+        <h3>Run Allocation</h3>
+        <p>เลือก timestamp ล่าสุดเพื่อสร้าง run จาก master data ชุด active</p>
+        <label className="master-upload-card single">
+          <ClipboardCheck size={30} />
+          <strong>{timestampFile?.name ?? "เลือก Timestamp สำหรับ run ใหม่"}</strong>
+          <span>ระบบจะผูก master files ล่าสุดเข้ากับ run นี้</span>
+          <input
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            onChange={(event) => setTimestampFile(event.target.files?.[0] ?? null)}
+          />
+        </label>
+        <button
+          className="primary-button save-master-button"
+          disabled={!timestampFile || !hasAllActiveMasters || isCreatingRun}
+          onClick={createDailyRun}
+          type="button"
+        >
+          <ClipboardCheck size={18} />
+          {isCreatingRun ? "Creating" : "Create Allocation Run"}
+        </button>
+        {!hasAllActiveMasters ? (
+          <p className="inline-warning">ต้องมี master files ครบ 3 ไฟล์ก่อน</p>
+        ) : null}
+      </section>
+
+      <section className="panel files-panel">
+        <h3>Latest Run</h3>
+        {latestRun ? (
+          <div className="run-summary">
+            <strong>{latestRun.status}</strong>
+            <span>{new Date(latestRun.created_at).toLocaleString("th-TH")}</span>
+            <span>{latestRun.scan_file_path ?? "-"}</span>
+          </div>
+        ) : (
+          <p className="empty-copy">ยังไม่มี run</p>
+        )}
+      </section>
+    </section>
+  );
+}
+
+function TimestampWithDeptPage({ reportData }: { reportData: ReportData | null }) {
+  const rows = reportData?.timestampRows.slice(0, 80) ?? [];
+
+  return (
+    <section className="panel results-panel">
+      <div className="panel-title-row">
+        <h3>Timestamp With Dept</h3>
+        <span className="table-count">{rows.length} rows</span>
+      </div>
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Employee ID</th>
+            <th>Name</th>
+            <th>Dept</th>
+            <th>Position</th>
+            <th>Shift</th>
+            <th>Shift Start</th>
+            <th>Scan In</th>
+            <th>Status</th>
+            <th>Minutes Late</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.empId}-${row.scanIn}`}>
+              <td>{row.empId}</td>
+              <td>{row.name}</td>
+              <td>{row.dept}</td>
+              <td>{row.position}</td>
+              <td>{row.shift}</td>
+              <td>{row.shiftStart}</td>
+              <td>{row.scanIn}</td>
+              <td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td>
+              <td>{row.minutesLate}</td>
+            </tr>
+          ))}
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={9}>ยังไม่มี timestamp ที่ merge หน่วยงานแล้ว</td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 function LatestMasterFiles({
   activeMasterMap,
 }: {
@@ -950,14 +1079,20 @@ function LatestMasterFiles({
   );
 }
 
-function ResultsPanel({ reportData }: { reportData: ReportData | null }) {
+function ResultsPanel({
+  reportData,
+  standalone = false,
+}: {
+  reportData: ReportData | null;
+  standalone?: boolean;
+}) {
   const rows = reportData?.records
     .filter((record) => record.status !== "Absent")
     .slice(0, 10) ?? [];
   const totalRows = reportData?.records.filter((record) => record.status !== "Absent").length ?? 0;
 
   return (
-    <section className="panel results-panel">
+    <section className={`panel results-panel ${standalone ? "standalone" : ""}`}>
       <div className="panel-title-row">
         <h3>ผลลัพธ์การจัดสรรล่าสุด</h3>
         <div className="table-actions">
@@ -1035,6 +1170,7 @@ function ReportDashboard({
     deptRows: [],
     lateRows: [],
     records: [],
+    timestampRows: [],
   };
   const lateRate = data.totalEmployees
     ? ((data.late / data.totalEmployees) * 100).toFixed(1)

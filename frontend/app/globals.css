@@ -874,6 +874,34 @@ button {
   text-align: center;
 }
 
+.run-panel p,
+.run-summary span {
+  color: var(--muted);
+}
+
+.run-summary {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.run-summary strong {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #eaf8ef;
+  color: #08733f;
+}
+
+.table-count {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.results-panel.standalone {
+  margin-top: 0;
+}
+
 .table-actions {
   display: flex;
   align-items: center;

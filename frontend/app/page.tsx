@@ -18,6 +18,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
+import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 
 type AllocationRun = {
@@ -35,6 +36,27 @@ type MasterFile = {
   file_path: string;
   original_filename: string | null;
   created_at: string;
+};
+
+type AttendanceRecord = {
+  empId: string;
+  name: string;
+  dept: string;
+  shift: string;
+  shiftStart: string;
+  scanIn: string;
+  status: "Present" | "Late" | "Absent";
+  minutesLate: number;
+};
+
+type ReportData = {
+  targetDate: string;
+  totalEmployees: number;
+  present: number;
+  late: number;
+  absent: number;
+  deptRows: Array<{ dept: string; present: number; late: number; absent: number; total: number }>;
+  lateRows: AttendanceRecord[];
 };
 
 const masterFileTypes = [
@@ -99,6 +121,8 @@ export default function Home() {
   const [runs, setRuns] = useState<AllocationRun[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [isSavingMasters, setIsSavingMasters] = useState(false);
   const [isCreatingRun, setIsCreatingRun] = useState(false);
 
@@ -290,6 +314,37 @@ export default function Home() {
     await loadRuns();
   }
 
+  async function loadReportDashboard() {
+    setError("");
+    setMessage("");
+    setIsLoadingReport(true);
+
+    try {
+      const employeeMaster = activeMasterMap.employee_master;
+      const latestRun = runs.find((run) => run.scan_file_path);
+
+      if (!employeeMaster || !latestRun?.scan_file_path) {
+        setError("ต้องมีไฟล์รายชื่อพนักงานและ timestamp ล่าสุดก่อนสร้าง Report & Dashboard");
+        setIsLoadingReport(false);
+        return;
+      }
+
+      const [employeeRows, scanRows, manpowerRows] = await Promise.all([
+        downloadSheetRows(employeeMaster.file_path),
+        downloadSheetRows(latestRun.scan_file_path),
+        activeMasterMap.manpower_plan
+          ? downloadSheetRows(activeMasterMap.manpower_plan.file_path)
+          : Promise.resolve([]),
+      ]);
+
+      setReportData(buildReportData(employeeRows, scanRows, manpowerRows));
+    } catch (reportError) {
+      setError(reportError instanceof Error ? reportError.message : "โหลด report ไม่สำเร็จ");
+    } finally {
+      setIsLoadingReport(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -422,7 +477,15 @@ export default function Home() {
           />
         ) : null}
 
-        {!["dashboard", "master", "timestamp"].includes(activeTab) ? (
+        {activeTab === "report" ? (
+          <ReportDashboard
+            isLoadingReport={isLoadingReport}
+            loadReportDashboard={loadReportDashboard}
+            reportData={reportData}
+          />
+        ) : null}
+
+        {!["dashboard", "master", "timestamp", "report"].includes(activeTab) ? (
           <section className="panel empty-page">
             <h3>{activeNav?.label}</h3>
             <p>แท็บนี้จะเชื่อมข้อมูลจริงในขั้นถัดไป</p>
@@ -431,6 +494,218 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+async function downloadSheetRows(path: string): Promise<Record<string, unknown>[]> {
+  const { data, error } = await supabase.storage.from("workforce-inputs").download(path);
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const buffer = await data.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
+    defval: "",
+    raw: false,
+  });
+
+  if (rows.some((row) => "Timestamp" in row && "Employee ID" in row)) {
+    return rows;
+  }
+
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, {
+    header: 1,
+    defval: "",
+    raw: false,
+  });
+  const headerIndex = rawRows.findIndex(
+    (row) =>
+      Array.isArray(row) &&
+      row.includes("Timestamp") &&
+      (row.includes("Employee ID") || row.includes("Employee Name")),
+  );
+
+  if (headerIndex < 0) {
+    return rows;
+  }
+
+  const headers = rawRows[headerIndex].map((header) => String(header));
+  return rawRows.slice(headerIndex + 1).map((row) => {
+    const record: Record<string, unknown> = {};
+    headers.forEach((header, index) => {
+      record[header] = Array.isArray(row) ? row[index] ?? "" : "";
+    });
+    return record;
+  });
+}
+
+function buildReportData(
+  employeeRows: Record<string, unknown>[],
+  scanRows: Record<string, unknown>[],
+  manpowerRows: Record<string, unknown>[],
+): ReportData {
+  const employees = employeeRows.map((row) => {
+    const empId = cleanEmpId(row["User ID (Job Information)"] ?? row["Employee ID"] ?? row["Emp ID"]);
+    const firstName = String(row["First Name (Local)"] ?? "").trim();
+    const lastName = String(row["Last Name (Local)"] ?? "").trim();
+    const fallbackName = String(row["Employee Name"] ?? row["Name"] ?? "").trim();
+    return {
+      empId,
+      name: `${firstName} ${lastName}`.trim() || fallbackName || empId,
+      dept: String(row["หน่วยงาน"] ?? row["dept"] ?? row["Name (Section)"] ?? "ไม่ระบุ").trim() || "ไม่ระบุ",
+    };
+  }).filter((row) => row.empId);
+
+  const employeeMap = new Map(employees.map((employee) => [employee.empId, employee]));
+  const deptShiftStart = buildDeptShiftStart(manpowerRows);
+  const scanByEmp = new Map<string, { name: string; times: Date[] }>();
+
+  for (const row of scanRows) {
+    const empId = cleanEmpId(row["Employee ID"] ?? row["Emp ID"] ?? row["รหัสพนักงาน"]);
+    const timestamp = parseTimestamp(row["Timestamp"]);
+    if (!empId || !timestamp) continue;
+
+    const current = scanByEmp.get(empId) ?? {
+      name: String(row["Employee Name"] ?? row["name"] ?? "").trim(),
+      times: [],
+    };
+    current.times.push(timestamp);
+    scanByEmp.set(empId, current);
+  }
+
+  const targetDate =
+    Array.from(scanByEmp.values())
+      .flatMap((entry) => entry.times)
+      .sort((a, b) => b.getTime() - a.getTime())[0]
+      ?.toLocaleDateString("th-TH") ?? "-";
+
+  const baseEmployees = employees.length
+    ? employees
+    : Array.from(scanByEmp.entries()).map(([empId, entry]) => ({
+        empId,
+        name: entry.name || empId,
+        dept: "ไม่ระบุ",
+      }));
+
+  const records: AttendanceRecord[] = baseEmployees.map((employee) => {
+    const scans = scanByEmp.get(employee.empId)?.times ?? [];
+    const scanIn = scans.sort((a, b) => a.getTime() - b.getTime())[0];
+    const shiftStart = deptShiftStart.get(employee.dept) ?? "07:00";
+    const minutesLate = scanIn ? Math.max(0, minutesBetween(shiftStart, scanIn)) : 0;
+    const status = !scanIn ? "Absent" : minutesLate > 5 ? "Late" : "Present";
+
+    return {
+      empId: employee.empId,
+      name: employee.name,
+      dept: employee.dept,
+      shift: "กะ 1",
+      shiftStart,
+      scanIn: scanIn ? toTimeText(scanIn) : "-",
+      status,
+      minutesLate,
+    };
+  });
+
+  const deptMap = new Map<string, { dept: string; present: number; late: number; absent: number; total: number }>();
+  for (const record of records) {
+    const current = deptMap.get(record.dept) ?? {
+      dept: record.dept,
+      present: 0,
+      late: 0,
+      absent: 0,
+      total: 0,
+    };
+    current.total += 1;
+    if (record.status === "Present") current.present += 1;
+    if (record.status === "Late") current.late += 1;
+    if (record.status === "Absent") current.absent += 1;
+    deptMap.set(record.dept, current);
+  }
+
+  return {
+    targetDate,
+    totalEmployees: records.length,
+    present: records.filter((record) => record.status === "Present").length,
+    late: records.filter((record) => record.status === "Late").length,
+    absent: records.filter((record) => record.status === "Absent").length,
+    deptRows: Array.from(deptMap.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 12),
+    lateRows: records
+      .filter((record) => record.status === "Late")
+      .sort((a, b) => b.minutesLate - a.minutesLate)
+      .slice(0, 80),
+  };
+}
+
+function buildDeptShiftStart(rows: Record<string, unknown>[]) {
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const dept = String(row["หน่วยงาน"] ?? row["dept"] ?? "").trim();
+    const shiftStart = normalizeTimeText(row["เวลาเข้า"] ?? row["shift_start"]);
+    if (dept && shiftStart && !map.has(dept)) {
+      map.set(dept, shiftStart);
+    }
+  }
+  return map;
+}
+
+function cleanEmpId(value: unknown) {
+  return String(value ?? "")
+    .replace(/\u00a0/g, "")
+    .replace(/\s+/g, "")
+    .replace(/\.0$/, "")
+    .replace(/[^0-9]/g, "");
+}
+
+function parseTimestamp(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
+  }
+
+  const text = String(value ?? "").trim();
+  const thaiStyle = text.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (thaiStyle) {
+    const [, day, month, year, hour, minute, second = "0"] = thaiStyle;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+    );
+  }
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizeTimeText(value: unknown) {
+  if (value instanceof Date) {
+    return toTimeText(value);
+  }
+
+  const text = String(value ?? "").trim();
+  const match = text.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
+function toTimeText(value: Date) {
+  return value.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function minutesBetween(shiftStart: string, scanIn: Date) {
+  const [hour, minute] = shiftStart.split(":").map(Number);
+  const shift = new Date(scanIn);
+  shift.setHours(hour || 0, minute || 0, 0, 0);
+  return Math.round((scanIn.getTime() - shift.getTime()) / 60000);
 }
 
 function DashboardPanels({
@@ -679,6 +954,177 @@ function ResultsPanel({ assignedPeople }: { assignedPeople: number }) {
         <button type="button">...</button>
       </div>
     </section>
+  );
+}
+
+function ReportDashboard({
+  isLoadingReport,
+  loadReportDashboard,
+  reportData,
+}: {
+  isLoadingReport: boolean;
+  loadReportDashboard: () => Promise<void>;
+  reportData: ReportData | null;
+}) {
+  const data = reportData ?? {
+    targetDate: "-",
+    totalEmployees: 0,
+    present: 0,
+    late: 0,
+    absent: 0,
+    deptRows: [],
+    lateRows: [],
+  };
+  const lateRate = data.totalEmployees
+    ? ((data.late / data.totalEmployees) * 100).toFixed(1)
+    : "0.0";
+  const maxDeptTotal = Math.max(...data.deptRows.map((row) => row.total), 1);
+  const presentPercent = data.totalEmployees ? (data.present / data.totalEmployees) * 100 : 0;
+  const latePercent = data.totalEmployees ? (data.late / data.totalEmployees) * 100 : 0;
+  const absentPercent = data.totalEmployees ? (data.absent / data.totalEmployees) * 100 : 0;
+
+  return (
+    <section className="report-page">
+      <div className="report-toolbar">
+        <div className="filter-card">
+          <label>date</label>
+          <strong>{data.targetDate}</strong>
+        </div>
+        <div className="filter-card wide">
+          <label>dept</label>
+          <strong>{data.deptRows[0]?.dept ?? "Select all"}</strong>
+        </div>
+        <button
+          className="primary-button report-refresh"
+          disabled={isLoadingReport}
+          onClick={loadReportDashboard}
+          type="button"
+        >
+          <BarChart3 size={17} />
+          {isLoadingReport ? "Loading" : "Load Uploaded Data"}
+        </button>
+      </div>
+
+      <section className="report-kpis">
+        <ReportMetric value={data.totalEmployees} label="จำนวนพนักงานทั้งหมด" />
+        <ReportMetric value={data.present} label="Present" tone="green" />
+        <ReportMetric value={data.late} label="Late" tone="amber" />
+        <ReportMetric value={data.absent} label="Absent" tone="red" />
+        <ReportMetric value={`${lateRate} %`} label="Late Rate %" />
+      </section>
+
+      <section className="report-grid">
+        <div className="panel report-card">
+          <h3>การเข้างานรายแผนก</h3>
+          <div className="stacked-bars">
+            {data.deptRows.map((row) => (
+              <div className="stacked-row" key={row.dept}>
+                <span>{row.dept}</span>
+                <div className="stacked-track">
+                  <i
+                    className="present"
+                    style={{ width: `${(row.present / maxDeptTotal) * 100}%` }}
+                  />
+                  <i
+                    className="late"
+                    style={{ width: `${(row.late / maxDeptTotal) * 100}%` }}
+                  />
+                  <i
+                    className="absent"
+                    style={{ width: `${(row.absent / maxDeptTotal) * 100}%` }}
+                  />
+                </div>
+                <strong>{row.total}</strong>
+              </div>
+            ))}
+            {data.deptRows.length === 0 ? <p className="empty-copy">ยังไม่มีข้อมูล report</p> : null}
+          </div>
+        </div>
+
+        <div className="panel report-card center">
+          <h3>การเข้างานทั้งโรงงาน</h3>
+          <div
+            className="report-donut"
+            style={{
+              background: `conic-gradient(#58991f 0 ${presentPercent}%, #f4a21d ${presentPercent}% ${presentPercent + latePercent}%, #cc1f1f ${presentPercent + latePercent}% 100%)`,
+            }}
+          >
+            <div>
+              <strong>{data.totalEmployees}</strong>
+              <span>ทั้งหมด</span>
+            </div>
+          </div>
+          <div className="report-legend">
+            <LegendRow color="green" label="Present" value={String(data.present)} percent={`${presentPercent.toFixed(1)}%`} />
+            <LegendRow color="amber" label="Late" value={String(data.late)} percent={`${latePercent.toFixed(1)}%`} />
+            <LegendRow color="red" label="Absent" value={String(data.absent)} percent={`${absentPercent.toFixed(1)}%`} />
+          </div>
+        </div>
+
+        <div className="panel report-card">
+          <h3>Count of attendance_status by dept</h3>
+          <div className="mini-pie">
+            <div />
+          </div>
+          <div className="mini-pie-legend">
+            {data.deptRows.slice(0, 3).map((row) => (
+              <span key={row.dept}>{row.dept}: {row.total}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel report-table-panel">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>หน่วยงาน</th>
+              <th>name</th>
+              <th>shift</th>
+              <th>shift_start</th>
+              <th>scan_in</th>
+              <th>Status</th>
+              <th>Minutes Late</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.lateRows.map((row) => (
+              <tr key={`${row.empId}-${row.scanIn}`}>
+                <td>{row.dept}</td>
+                <td>{row.name}</td>
+                <td>{row.shift}</td>
+                <td>{row.shiftStart}</td>
+                <td>{row.scanIn}</td>
+                <td>{row.status}</td>
+                <td>{row.minutesLate}</td>
+              </tr>
+            ))}
+            {data.lateRows.length === 0 ? (
+              <tr>
+                <td colSpan={7}>กด Load Uploaded Data เพื่อสร้างรายงานจากไฟล์ที่อัปโหลด</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </section>
+    </section>
+  );
+}
+
+function ReportMetric({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone?: "green" | "amber" | "red";
+  value: number | string;
+}) {
+  return (
+    <div className={`report-metric ${tone ?? ""}`}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
   );
 }
 

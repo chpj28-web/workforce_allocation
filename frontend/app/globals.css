@@ -872,7 +872,6 @@ button.stacked-row {
   width: 164px;
   height: 164px;
   border-radius: 50%;
-  background: conic-gradient(#1f8ff2 0 62%, #1c27a8 62% 100%);
 }
 
 .mini-pie-legend {
@@ -880,6 +879,19 @@ button.stacked-row {
   gap: 6px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.mini-pie-legend span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-pie-legend i {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
 }
 
 .report-table-panel {

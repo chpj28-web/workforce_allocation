@@ -1445,6 +1445,25 @@ function ReportDashboard({
   const latePercent = scopedTotal ? (scopedLate / scopedTotal) * 100 : 0;
   const absentPercent = scopedTotal ? (scopedAbsent / scopedTotal) * 100 : 0;
   const lateDeptOptions = Array.from(new Set(data.lateRows.map((row) => row.dept))).sort();
+  const lateDeptRows = Array.from(
+    data.lateRows.reduce((map, row) => {
+      map.set(row.dept, (map.get(row.dept) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>()),
+  )
+    .map(([dept, count]) => ({ dept, count }))
+    .sort((a, b) => b.count - a.count);
+  const lateDeptTotal = Math.max(lateDeptRows.reduce((sum, row) => sum + row.count, 0), 1);
+  const pieColors = ["#238ff0", "#2528aa", "#14a35b", "#f4a21d", "#c91d1d", "#7a57d1"];
+  let pieCursor = 0;
+  const lateDeptPie = lateDeptRows.length
+    ? `conic-gradient(${lateDeptRows.map((row, index) => {
+        const start = pieCursor;
+        const end = pieCursor + (row.count / lateDeptTotal) * 100;
+        pieCursor = end;
+        return `${pieColors[index % pieColors.length]} ${start}% ${end}%`;
+      }).join(", ")})`
+    : "conic-gradient(#e6e8ea 0 100%)";
   const selectedDeptLabel = selectedDept === "all" ? "ทั้งโรงงาน" : selectedDept;
   const normalizedQuery = query.trim().toLowerCase();
   const filteredLateRows = data.lateRows.filter((row) => {
@@ -1555,14 +1574,18 @@ function ReportDashboard({
         </div>
 
         <div className="panel report-card">
-          <h3>Count of attendance_status by dept</h3>
+          <h3>สัดส่วนหน่วยงานที่มีคนมาสาย</h3>
           <div className="mini-pie">
-            <div />
+            <div style={{ background: lateDeptPie }} />
           </div>
           <div className="mini-pie-legend">
-            {data.deptRows.slice(0, 3).map((row) => (
-              <span key={row.dept}>{row.dept}: {row.total}</span>
+            {lateDeptRows.slice(0, 6).map((row, index) => (
+              <span key={row.dept}>
+                <i style={{ background: pieColors[index % pieColors.length] }} />
+                {row.dept}: {row.count}
+              </span>
             ))}
+            {lateDeptRows.length === 0 ? <span>ยังไม่มีข้อมูลคนมาสาย</span> : null}
           </div>
         </div>
       </section>

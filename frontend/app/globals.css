@@ -388,6 +388,26 @@ button {
   font-size: 14px;
 }
 
+.donut.compact {
+  width: 86px;
+  height: 86px;
+  margin: 0;
+}
+
+.donut.compact > div {
+  width: 48px;
+  height: 48px;
+}
+
+.donut.compact strong {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.donut.compact span {
+  font-size: 10px;
+}
+
 .legend {
   display: grid;
   gap: 18px;
@@ -409,6 +429,14 @@ button {
 .legend-row em {
   color: #101010;
   font-style: normal;
+}
+
+.legend.compact {
+  gap: 4px;
+}
+
+.legend.compact .legend-row {
+  font-size: 12px;
 }
 
 .dot {
@@ -826,6 +854,37 @@ button.stacked-row {
   justify-items: center;
 }
 
+.dashboard-late-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+}
+
+.late-people-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.late-people-card h3 {
+  text-align: left;
+}
+
+.late-preview-table {
+  min-height: 0;
+  overflow: auto;
+}
+
+.compact-table {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 9px 8px;
+}
+
 .report-donut {
   width: 172px;
   height: 172px;
@@ -854,12 +913,51 @@ button.stacked-row {
   font-size: 12px;
 }
 
+.compact-attendance-summary {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.report-donut.compact {
+  width: 86px;
+  height: 86px;
+  margin-top: 0;
+}
+
+.report-donut.compact > div {
+  width: 48px;
+  height: 48px;
+}
+
+.report-donut.compact strong {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.report-donut.compact span {
+  font-size: 10px;
+}
+
 .report-legend {
   width: 100%;
   max-width: 330px;
   display: grid;
   gap: 8px;
   margin-top: 16px;
+}
+
+.report-legend.compact {
+  max-width: none;
+  gap: 4px;
+  margin-top: 0;
+}
+
+.report-legend.compact .legend-row {
+  font-size: 12px;
 }
 
 .mini-pie {

@@ -947,24 +947,54 @@ function DashboardPanels({
   const latePercent = total ? ((late / total) * 100).toFixed(1) : "0.0";
   const absentPercent = total ? ((absent / total) * 100).toFixed(1) : "0.0";
   const topDeptRows = reportData?.deptRows?.slice(0, 5) ?? deptRows;
+  const dashboardLateRows = reportData?.lateRows ?? [];
   const maxDeptTotal = Math.max(...topDeptRows.map((row) => "total" in row ? row.total : row.value), 1);
 
   return (
     <>
       <section className="dashboard-grid">
-        <section className="panel allocation-status">
-          <h3>สถานะการจัดสรรในวันนี้</h3>
-          <div className="donut-area">
-            <div className="donut">
+        <section className="panel allocation-status dashboard-late-card">
+          <div className="panel-title-row">
+            <h3>คนที่มาสาย</h3>
+            <span className="table-count">{dashboardLateRows.length} คน</span>
+          </div>
+          <div className="late-preview-table">
+            <table className="table compact-table">
+              <thead>
+                <tr>
+                  <th>ชื่อ</th>
+                  <th>หน่วยงาน</th>
+                  <th>เข้างาน</th>
+                  <th>สาย</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboardLateRows.slice(0, 6).map((row) => (
+                  <tr key={`dashboard-late-${row.empId}-${row.scanIn}`}>
+                    <td>{row.name}</td>
+                    <td>{row.dept}</td>
+                    <td>{row.scanIn}</td>
+                    <td>{row.minutesLate} นาที</td>
+                  </tr>
+                ))}
+                {dashboardLateRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={4}>ยังไม่มีข้อมูลคนมาสาย</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+          <div className="compact-attendance-summary">
+            <div className="donut compact">
               <div>
                 <strong>{totalActivePeople}</strong>
                 <span>พนักงาน</span>
               </div>
             </div>
-            <div className="legend">
+            <div className="legend compact">
               <LegendRow color="green" label="Present" value={String(present)} percent={`${presentPercent}%`} />
               <LegendRow color="amber" label="Late" value={String(late)} percent={`${latePercent}%`} />
-              <LegendRow color="gray" label="รอข้อมูล" value="0" percent="0.0%" />
               <LegendRow color="red" label="Absent" value={String(absent)} percent={`${absentPercent}%`} />
             </div>
           </div>
@@ -1704,23 +1734,55 @@ function ReportDashboard({
           </div>
         </div>
 
-        <div className="panel report-card center">
-          <h3>การเข้างาน{selectedDept === "all" ? "ทั้งโรงงาน" : selectedDept}</h3>
-          <div
-            className="report-donut"
-            style={{
-              background: `conic-gradient(#58991f 0 ${presentPercent}%, #f4a21d ${presentPercent}% ${presentPercent + latePercent}%, #cc1f1f ${presentPercent + latePercent}% 100%)`,
-            }}
-          >
-            <div>
-              <strong>{scopedTotal}</strong>
-              <span>ทั้งหมด</span>
-            </div>
+        <div className="panel report-card late-people-card">
+          <div className="panel-title-row">
+            <h3>คนที่มาสาย{selectedDept === "all" ? "" : ` - ${selectedDept}`}</h3>
+            <span className="table-count">{sortedLateRows.length} คน</span>
           </div>
-          <div className="report-legend">
-            <LegendRow color="green" label="Present" value={String(scopedPresent)} percent={`${presentPercent.toFixed(1)}%`} />
-            <LegendRow color="amber" label="Late" value={String(scopedLate)} percent={`${latePercent.toFixed(1)}%`} />
-            <LegendRow color="red" label="Absent" value={String(scopedAbsent)} percent={`${absentPercent.toFixed(1)}%`} />
+          <div className="late-preview-table">
+            <table className="table compact-table">
+              <thead>
+                <tr>
+                  <th>ชื่อ</th>
+                  <th>หน่วยงาน</th>
+                  <th>เข้างาน</th>
+                  <th>สาย</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedLateRows.map((row) => (
+                  <tr key={`preview-${row.empId}-${row.scanIn}`}>
+                    <td>{row.name}</td>
+                    <td>{row.dept}</td>
+                    <td>{row.scanIn}</td>
+                    <td>{row.minutesLate} นาที</td>
+                  </tr>
+                ))}
+                {sortedLateRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={4}>ยังไม่มีข้อมูลคนมาสาย</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+          <div className="compact-attendance-summary">
+            <div
+              className="report-donut compact"
+              style={{
+                background: `conic-gradient(#58991f 0 ${presentPercent}%, #f4a21d ${presentPercent}% ${presentPercent + latePercent}%, #cc1f1f ${presentPercent + latePercent}% 100%)`,
+              }}
+            >
+              <div>
+                <strong>{scopedTotal}</strong>
+                <span>ทั้งหมด</span>
+              </div>
+            </div>
+            <div className="report-legend compact">
+              <LegendRow color="green" label="Present" value={String(scopedPresent)} percent={`${presentPercent.toFixed(1)}%`} />
+              <LegendRow color="amber" label="Late" value={String(scopedLate)} percent={`${latePercent.toFixed(1)}%`} />
+              <LegendRow color="red" label="Absent" value={String(scopedAbsent)} percent={`${absentPercent.toFixed(1)}%`} />
+            </div>
           </div>
         </div>
 

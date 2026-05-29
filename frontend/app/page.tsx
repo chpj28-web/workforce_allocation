@@ -381,6 +381,15 @@ export default function Home() {
       ]);
 
       const latestReport = buildReportData(employeeRows, scanRows, manpowerRows);
+      try {
+        await saveTimestampWithDeptRows(latestRun.id, latestReport);
+      } catch (saveError) {
+        setError(
+          saveError instanceof Error
+            ? `โหลด report ได้ แต่บันทึก Timestamp With Dept ลง Supabase ไม่สำเร็จ: ${saveError.message}`
+            : "โหลด report ได้ แต่บันทึก Timestamp With Dept ลง Supabase ไม่สำเร็จ",
+        );
+      }
       const scanPaths = Array.from(
         new Set(runs.map((run) => run.scan_file_path).filter(Boolean) as string[]),
       );
@@ -420,11 +429,46 @@ export default function Home() {
     }
   }
 
+  async function saveTimestampWithDeptRows(runId: string, report: ReportData) {
+    const { error: deleteError } = await supabase
+      .from("timestamp_with_dept")
+      .delete()
+      .eq("run_id", runId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    const rows = report.timestampRows.map((row) => ({
+      run_id: runId,
+      target_date: report.targetDate,
+      emp_id: row.empId,
+      name: row.name,
+      dept: row.dept,
+      position: row.position,
+      shift: row.shift,
+      shift_start: row.shiftStart,
+      scan_in: row.scanIn,
+      attendance_status: row.status,
+      minutes_late: row.minutesLate,
+    }));
+
+    for (let index = 0; index < rows.length; index += 500) {
+      const { error: insertError } = await supabase
+        .from("timestamp_with_dept")
+        .insert(rows.slice(index, index + 500));
+
+      if (insertError) {
+        throw insertError;
+      }
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
         <div className="cpf-logo">
-          <img alt="CPF" src="/cpf-logo.png" />
+          <img alt="WAS" src="/was-logo.png" />
         </div>
 
         <nav className="nav-list" aria-label="Main navigation">
